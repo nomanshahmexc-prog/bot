@@ -176,7 +176,7 @@ class SupportResistanceDetector:
 
 
 # ================== GET TOP PERPETUALS ==================
-def get_top_n_perpetuals(n: int = 50, quote_filter: str = "USDT") -> List[str]:
+def get_top_n_perpetuals(n: int = 100, quote_filter: str = "USDT") -> List[str]:
     try:
         print(f"🔍 Fetching top {n} perpetuals...")
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
@@ -202,7 +202,7 @@ def get_top_n_perpetuals(n: int = 50, quote_filter: str = "USDT") -> List[str]:
 
         print(f"✅ Fetched {len(top_symbols)} top perpetual symbols from Binance")
         if len(top_symbols) > 0:
-            print(f"📈 Top 5: {top_symbols[:5]}")
+            print(f"📈 Top 10: {top_symbols[:10]}")  # Show top 10 instead of 5
         return top_symbols
 
     except Exception as e:
@@ -217,7 +217,7 @@ class UltraFastRSIScanner:
         self.base_url = "https://fapi.binance.com/fapi/v1/klines"
 
         if symbols is None:
-            symbols = get_top_n_perpetuals(50)  # Reduced from 100 to 50 for better performance
+            symbols = get_top_n_perpetuals(100)  # Top 100 coins as requested
             if not symbols:
                 symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT']
                 print("⚠️ Using fallback symbols")
@@ -276,7 +276,8 @@ class UltraFastRSIScanner:
 
     async def initialize_data(self):
         print("📊 Loading initial data...")
-        connector = aiohttp.TCPConnector(limit=30, ttl_dns_cache=300, ttl_dns_cache_ttl=600)
+        # Fixed TCPConnector parameters - removed invalid ttl_dns_cache_ttl
+        connector = aiohttp.TCPConnector(limit=30, ttl_dns_cache=300)
         timeout = aiohttp.ClientTimeout(total=30)
         
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
@@ -313,7 +314,8 @@ class UltraFastRSIScanner:
         print(f"📊 Successfully loaded data for {len(successful_symbols)} symbols")
 
     async def update_all_data(self):
-        connector = aiohttp.TCPConnector(limit=30)
+        # Fixed TCPConnector parameters
+        connector = aiohttp.TCPConnector(limit=30, ttl_dns_cache=300)
         timeout = aiohttp.ClientTimeout(total=15)
         
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
@@ -516,15 +518,15 @@ class UltraFastRSIScanner:
                     print(f"   📈 S/R: ${signal['support_level']:.4f} / ${signal['resistance_level']:.4f}")
                     print("-" * 60)
 
-            print(f"\n📊 LIVE STATUS (Top 20):")
+            print(f"\n📊 LIVE STATUS (Top 30):")  # Updated to show 30
             print("-" * 80)
             print(f"{'COIN':<10} {'PRICE':<12} {'RSI-1m':<8} {'RSI-15m':<9} {'S/R':<5} {'STATUS':<12}")
             print("-" * 80)
             
-            # Sort by signals first, then by symbol name, show top 20
+            # Sort by signals first, then by symbol name, show top 30
             sorted_results = sorted(results, key=lambda x: (len(x['signals']) > 0, x['symbol']), reverse=True)
             
-            for result in sorted_results[:20]:
+            for result in sorted_results[:30]:  # Show top 30 instead of 20
                 try:
                     sup_touch = "🟢" if result.get('support_touch', False) else "⚪"
                     res_touch = "🔴" if result.get('resistance_touch', False) else "⚪"
