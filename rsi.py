@@ -7,102 +7,26 @@ import warnings
 from datetime import datetime
 import requests
 from typing import List
-import threading
-from collections import deque
 
 warnings.filterwarnings('ignore')
 
-# ================== PUSHBULLET TOKEN ==================
+# ================== PUSHBULLET ==================
 PUSHBULLET_TOKEN = "o.SJ5wXkGzsBaU9W1kyMqLsIz8kEYJXP4Z"
 
-# ================== NOTIFICATION MANAGER ==================
-class NotificationManager:
-    def __init__(self, token, min_interval=2):
-        self.token = token
-        self.queue = deque()
-        self.failed_notifications = []
-        self.last_sent_time = 0
-        self.min_interval = min_interval
-        self.lock = threading.Lock()
-        self.cooldowns = {}  # symbol: last_sent_timestamp
-        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
-        self.worker_thread.start()
-
-    def _send_immediate(self, title, body):
-        try:
-            data_send = {"type": "note", "title": title, "body": body}
-            response = requests.post(
-                "https://api.pushbullet.com/v2/pushes",
-                json=data_send,
-                headers={
-                    "Access-Token": self.token,
-                    "Content-Type": "application/json"
-                },
-                timeout=5
-            )
-            if response.status_code == 200:
-                print(f"📲 Pushbullet Notification Sent: {title}")
-                return True
-            else:
-                print(f"⚠️ Pushbullet Error: {response.status_code} - {response.text}")
-                return False
-        except Exception as e:
-            print(f"❌ Pushbullet Exception: {e}")
-            return False
-
-    def _worker(self):
-        while True:
-            if self.queue:
-                with self.lock:
-                    notif = self.queue.popleft()
-                now = time.time()
-                # enforce min_interval gap
-                if now - self.last_sent_time < self.min_interval:
-                    time.sleep(self.min_interval - (now - self.last_sent_time))
-                ok = self._send_immediate(notif["title"], notif["body"])
-                if not ok:
-                    notif["retries"] += 1
-                    if notif["retries"] <= 3:
-                        print(f"🔄 Retrying {notif['title']} (Attempt {notif['retries']})")
-                        with self.lock:
-                            self.queue.append(notif)
-                    else:
-                        self.failed_notifications.append(notif)
-                else:
-                    self.last_sent_time = time.time()
-            else:
-                time.sleep(0.5)
-
-    def send(self, title, body, symbol):
-        now = time.time()
-
-        # cooldown per symbol (3 min)
-        if symbol in self.cooldowns and now - self.cooldowns[symbol] < 180:
-            print(f"⏳ Cooldown active for {symbol}, skipping {title}")
-            return
-
-        # duplicate filter (same title in <60 sec)
-        for notif in list(self.queue):
-            if notif['title'] == title and (now - notif['timestamp']) < 60:
-                print(f"🔄 Duplicate notification skipped: {title}")
-                return
-
-        notif = {
-            "title": title,
-            "body": body,
-            "timestamp": now,
-            "symbol": symbol,
-            "retries": 0
-        }
-
-        with self.lock:
-            self.queue.append(notif)
-
-        self.cooldowns[symbol] = now
-
-
-# ================== GLOBAL NOTIFICATION MANAGER ==================
-notifier = NotificationManager(PUSHBULLET_TOKEN)
+def send_notification(title, body):
+    try:
+        data_send = {"type": "note", "title": title, "body": body}
+        response = requests.post(
+            "https://api.pushbullet.com/v2/pushes",
+            json=data_send,
+            headers={"Access-Token": PUSHBULLET_TOKEN, "Content-Type": "application/json"}
+        )
+        if response.status_code == 200:
+            print(f"📲 Pushbullet Notification Sent: {title}")
+        else:
+            print(f"⚠️ Pushbullet Error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"❌ Pushbullet Exception: {e}")
 
 
 # ================== RSI CLASS ==================
@@ -156,6 +80,9 @@ class SupportResistanceDetector:
 
 # ================== GET TOP PERPETUALS ==================
 def get_top_n_perpetuals(n: int = 100, quote_filter: str = "USDT") -> List[str]:
+    """
+    Binance Futures 24h ticker سے top N symbols واپس کریں (highest quoteVolume کی بنیاد پر)
+    """
     try:
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         resp = requests.get(url, timeout=10)
@@ -338,7 +265,7 @@ class UltraFastRSIScanner:
                 }
                 signals.append(signal)
                 self.last_signals[symbol] = {'type': 'BUY','time': current_time,'candle_index': current_candle_index}
-                notifier.send("🟢 BUY SIGNAL 🚀", f"{symbol} @ {current_price:.2f}\nRSI1m={current_rsi_1m:.1f}, RSI15m={current_rsi_15m:.1f}", symbol)
+                send_notification("BUY Signal 🚀", f"{symbol} @ {current_price:.2f}\nRSI1m={current_rsi_1m:.1f}, RSI15m={current_rsi_15m:.1f}")
 
             elif (resistance_touch and current_rsi_1m >= 70 and current_rsi_15m >= 70):
                 if last_signal['type'] == 'SELL' and last_signal['candle_index'] is not None:
@@ -352,7 +279,7 @@ class UltraFastRSIScanner:
                 }
                 signals.append(signal)
                 self.last_signals[symbol] = {'type': 'SELL','time': current_time,'candle_index': current_candle_index}
-                notifier.send("🔴 SELL SIGNAL ❌", f"{symbol} @ {current_price:.2f}\nRSI1m={current_rsi_1m:.1f}, RSI15m={current_rsi_15m:.1f}", symbol)
+                send_notification("SELL Signal ❌", f"{symbol} @ {current_price:.2f}\nRSI1m={current_rsi_1m:.1f}, RSI15m={current_rsi_15m:.1f}")
 
             return {
                 'symbol': symbol,'price': current_price,
@@ -449,4 +376,3 @@ if __name__ == "__main__":
         asyncio.run(main_loop())
     except KeyboardInterrupt:
         print("👋 Scanner stopped by user")
-
